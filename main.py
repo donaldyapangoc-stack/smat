@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import models
 from database import engine, get_db
+import schemas
 
 # ==========================================================
 # CRITICAL: CREACIÓN DE LA BASE DE DATOS Y TABLAS
@@ -10,8 +11,28 @@ from database import engine, get_db
 # definidas en models.py si es que aún no existen.
 # ==========================================================
 models.Base.metadata.create_all(bind=engine)
-app = FastAPI(title="SMAT Persistente")
-
+app = FastAPI(
+    title="SMAT - Sistema de Monitoreo de Alerta Temprana",
+    description="""
+    API robusta para la gestión y monitoreo de desastres naturales.
+    Permite la telemetría de sensores en tiempo real y el cálculo de niveles de riesgo.
+    **Entidades principales:**
+    * **Estaciones:** Puntos de monitoreo físico.
+    * **Lecturas:** Datos capturados por sensores.
+    * **Riesgos:** Análisis de criticidad basado en umbrales.
+    """,
+    version="1.0.0",
+    terms_of_service="http://unmsm.edu.pe/terms/",
+    contact={
+        "name": "Soporte Técnico SMAT - FISI",
+        "url": "http://fisi.unmsm.edu.pe",
+        "email": "desarrollo.smat@unmsm.edu.pe",
+    },
+    license_info={
+        "name": "Apache 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
+    },
+)
 # Esquemas de validación (Pydantic)
 class EstacionCreate(BaseModel):
     id: int
@@ -22,8 +43,15 @@ class LecturaCreate(BaseModel):
     valor: float
 
 
-@app.post("/estaciones/", status_code=201)
-def crear_estacion(estacion: EstacionCreate, db: Session = Depends(get_db)):
+@app.post(
+    "/estaciones/",
+    status_code=201,
+    tags=["Gestión de Infraestructura"],
+    summary="Registrar una nueva estación de monitoreo",
+    description="Inserta una estación física (ej. río, volcán, zona sísmica) en la base de datos relacional."
+)
+def crear_estacion(estacion: schemas.EstacionCreate, db: Session = Depends(get_db)):
+    #Logica implementada en S2 y S3
     # Convertimos el esquema de Pydantic a Modelo de SQLAlchemy
     nueva_estacion = models.EstacionDB(id=estacion.id, nombre=estacion.nombre,
     ubicacion=estacion.ubicacion)
@@ -42,8 +70,15 @@ class Lectura(BaseModel):
 
 db_lecturas = []
 
-@app.post("/lecturas/", status_code=201)
-def registrar_lectura(lectura: LecturaCreate, db: Session = Depends(get_db)):
+@app.post(
+"/lecturas/",
+    status_code=201,
+    tags=["Telemetría de Sensores"],
+    summary="Recibir datos de telemetría",
+    description="Recibe el valor capturado por un sensor y lo vincula a una estación existente mediante su ID."
+)
+def registrar_lectura(lectura: schemas.LecturaCreate, db: Session = Depends(get_db)):
+    #   ... (lógica implementada)
     # Validar si la estación existe en la DB
     estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id ==
     lectura.estacion_id).first()
@@ -55,7 +90,12 @@ def registrar_lectura(lectura: LecturaCreate, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "Lectura guardada en DB"}
 
-@app.get("/estaciones/{id}/riesgo")
+@app.get(
+    "/estaciones/{id}/riesgo",
+    tags=["Análisis de Riesgo"],
+    summary="Evaluar nivel de peligro actual",
+    description="Analiza la última lectura recibida de una estación y determina si el estado es NORMAL, ALERTA o PELIGRO."
+)
 async def obtener_riesgo(id: int):
     # 1. Validar existencia de la estación (Requisito 404)
     estacion_existe = any(e.id == id for e in db_estaciones)
