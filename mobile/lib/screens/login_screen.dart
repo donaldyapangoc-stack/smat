@@ -17,22 +17,28 @@ class _LoginScreenState extends State<LoginScreen> {
   void _handleLogin() async {
     setState(() => _isLoading = true);
 
-    // El AuthService guarda el token internamente si el login es exitoso
-    bool success = await AuthService().login(
-      _userController.text,
-      _passController.text
-    );
-
-    setState(() => _isLoading = false);
-
-    if (success) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomePage())
+    try {
+      bool success = await AuthService().login(
+        _userController.text,
+        _passController.text,
       );
-    } else {
+
+      setState(() => _isLoading = false);
+
+      if (success) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomePage()),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Credenciales incorrectas')),
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Credenciales incorrectas o servidor offline')),
+        SnackBar(content: Text('Error: $e')),
       );
     }
   }
@@ -58,10 +64,10 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 30),
             _isLoading
-                ? const CircularProgressIndicator()
+                ? const CircularProgressIndicator()  // ← Feedback visual
                 : ElevatedButton(
                     onPressed: _handleLogin,
-                    child: const Text('Iniciar Sesión')
+                    child: const Text('Iniciar Sesión'),
                   ),
           ],
         ),

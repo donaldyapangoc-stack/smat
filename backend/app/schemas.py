@@ -1,7 +1,8 @@
 from pydantic import BaseModel
+from typing import Optional 
 
 class EstacionCreate(BaseModel):
-    id: int
+    id: Optional[int] = None
     nombre: str
     ubicacion: str
 

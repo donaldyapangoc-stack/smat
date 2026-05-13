@@ -1,12 +1,12 @@
 from sqlalchemy import Column, Integer, String, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from .database import Base
+
 class EstacionDB(Base):
     __tablename__ = "estaciones"
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)  
     nombre = Column(String)
     ubicacion = Column(String)
-    #Relación: permite acceder a las lecturas desde el objeto estación
     lecturas = relationship("LecturaDB", back_populates="estacion")
 class LecturaDB(Base):
     __tablename__ = "lecturas"
