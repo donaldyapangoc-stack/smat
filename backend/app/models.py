@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Float, ForeignKey
 from sqlalchemy.orm import relationship
-from database import Base
+from .database import Base
 class EstacionDB(Base):
     __tablename__ = "estaciones"
     id = Column(Integer, primary_key=True, index=True)

@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware  #Continuando Desarrollo en Windows 
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-import models
-from database import engine, get_db
-import schemas
+from . import models              
+from .database import engine, get_db
+from . import schemas
 
 # ==========================================================
 # CRITICAL: CREACIÓN DE LA BASE DE DATOS Y TABLAS
@@ -33,6 +34,16 @@ app = FastAPI(
         "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
     },
 )
+
+#Para cuando este desarrollando en Windows :p
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Esquemas de validación (Pydantic)
 class EstacionCreate(BaseModel):
     id: int
@@ -61,8 +72,9 @@ def crear_estacion(estacion: schemas.EstacionCreate, db: Session = Depends(get_d
     return {"msj": "Estación guardada en DB", "data": nueva_estacion}
 
 @app.get("/estaciones/")
-async def listar_estaciones():
-    return db_estaciones
+async def listar_estaciones(db: Session = Depends(get_db)):
+    estaciones = db.query(models.EstacionDB).all()
+    return estaciones
 
 class Lectura(BaseModel):
     estacion_id: int
@@ -96,16 +108,18 @@ def registrar_lectura(lectura: schemas.LecturaCreate, db: Session = Depends(get_
     summary="Evaluar nivel de peligro actual",
     description="Analiza la última lectura recibida de una estación y determina si el estado es NORMAL, ALERTA o PELIGRO."
 )
-async def obtener_riesgo(id: int):
-    # 1. Validar existencia de la estación (Requisito 404)
-    estacion_existe = any(e.id == id for e in db_estaciones)
-    if not estacion_existe:
+async def obtener_riesgo(id: int, db: Session = Depends(get_db)):
+    # 1. Validar existencia de la estación
+    estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
+    if not estacion:
         raise HTTPException(status_code=404, detail="Estación no encontrada")
+    
     # 2. Filtrar lecturas de la estación
-    lecturas = [l for l in db_lecturas if l.estacion_id == id]
+    lecturas = db.query(models.LecturaDB).filter(models.LecturaDB.estacion_id == id).all()
     if not lecturas:
         return {"id": id, "nivel": "SIN DATOS", "valor": 0}
-    # 3. Evaluar última lectura (Motor de Reglas)
+    
+    # 3. Evaluar última lectura
     ultima_lectura = lecturas[-1].valor
     if ultima_lectura > 20.0:
         nivel = "PELIGRO"
@@ -117,24 +131,26 @@ async def obtener_riesgo(id: int):
 
 
 @app.get("/estaciones/{id}/historial")
-async def obtener_historial(id: int):
-    # PASO 1: Verificar si la estación existe en db_estaciones
-    estacion_existe = any(e.id == id for e in db_estaciones)
-    if not estacion_existe:
+async def obtener_historial(id: int, db: Session = Depends(get_db)):
+    # PASO 1: Verificar si la estación existe
+    estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
+    if not estacion:
         raise HTTPException(status_code=404, detail="Estación no encontrada")
 
-    # PASO 2: Filtrar las lecturas de db_lecturas que coincidan con el id
+    # PASO 2: Filtrar las lecturas
+    lecturas = db.query(models.LecturaDB).filter(models.LecturaDB.estacion_id == id).all()
+    valores_lecturas = [lectura.valor for lectura in lecturas]
 
-    # PASO 3: Calcular el promedio (usando la validación del punto 2)
-    if len(lecturas_filtradas) > 0:
-        promedio = sum(lecturas_filtradas) / len(lecturas_filtradas)
+    # PASO 3: Calcular el promedio
+    if len(valores_lecturas) > 0:
+        promedio = sum(valores_lecturas) / len(valores_lecturas)
     else:
         promedio = 0.0
 
-   # PASO 4: Retornar el JSON con la estructura solicitada
+    # PASO 4: Retornar el JSON
     return {
         "estacion_id": id,
-        "lecturas": lecturas_filtradas,
-        "conteo": len(lecturas_filtradas),
-        "promedio": round(promedio, 2) # round para solo 2 decimales
+        "lecturas": valores_lecturas,
+        "conteo": len(valores_lecturas),
+        "promedio": round(promedio, 2)
     }
