@@ -6,20 +6,21 @@ from . import models
 from .database import engine, get_db
 from . import schemas
 from fastapi.security import OAuth2PasswordRequestForm
-from .auth import crear_token_acceso, obtener_identidad_actual
+from .auth import crear_token_acceso, obtener_identidad_actual, autenticar_usuario
 
 
-# ==========================================================
-# CRITICAL: CREACIÓN DE LA BASE DE DATOS Y TABLAS
-# Esta línea busca el archivo 'smat.db' y crea las tablas
-# definidas en models.py si es que aún no existen.
-# ==========================================================
+
+# CREACIÓN DE LA BASE DE DATOS Y TABLAS
+
+
 models.Base.metadata.create_all(bind=engine)
+
 app = FastAPI(
     title="SMAT - Sistema de Monitoreo de Alerta Temprana",
     description="""
     API robusta para la gestión y monitoreo de desastres naturales.
     Permite la telemetría de sensores en tiempo real y el cálculo de niveles de riesgo.
+    
     **Entidades principales:**
     * **Estaciones:** Puntos de monitoreo físico.
     * **Lecturas:** Datos capturados por sensores.
@@ -47,15 +48,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Esquemas de validación (Pydantic)
-class EstacionCreate(BaseModel):
-    id: int
-    nombre: str
-    ubicacion: str  
-class LecturaCreate(BaseModel):
-    estacion_id: int
-    valor: float
 
+# ENDPOINTS DE SEGURIDAD
+
+@app.post("/token", tags=["Seguridad"])
+async def login_para_obtener_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    """
+    Endpoint de autenticación. Recibe username y password y devuelve un token JWT.
+    
+    **Credenciales válidas:**
+    - admin_smat / password123
+    - operador / smat_user2026
+    """
+    token = autenticar_usuario(form_data.username, form_data.password)
+    
+    if not token:
+        raise HTTPException(
+            status_code=401, 
+            detail="Credenciales incorrectas"
+        )
+    
+    return {
+        "access_token": token,
+        "token_type": "bearer"
+    }
+
+
+# ENDPOINTS DE ESTACIONES 
 
 @app.post(
     "/estaciones/",
@@ -69,7 +88,11 @@ def crear_estacion(
     db: Session = Depends(get_db),
     usuario: str = Depends(obtener_identidad_actual)
 ):
-   #ID autogenerada
+    # Verificar si ya existe una estación con ese nombre
+    existe = db.query(models.EstacionDB).filter(models.EstacionDB.nombre == estacion.nombre).first()
+    if existe:
+        raise HTTPException(status_code=400, detail="Ya existe una estación con ese nombre")
+    
     nueva_estacion = models.EstacionDB(
         nombre=estacion.nombre,
         ubicacion=estacion.ubicacion
@@ -79,16 +102,52 @@ def crear_estacion(
     db.refresh(nueva_estacion)
     return {"msj": "Estación guardada en DB", "data": nueva_estacion}
 
-@app.get("/estaciones/")
+
+@app.get("/estaciones/", tags=["Gestión de Infraestructura"])
 async def listar_estaciones(db: Session = Depends(get_db)):
+    """Lista todas las estaciones de monitoreo registradas."""
     estaciones = db.query(models.EstacionDB).all()
     return estaciones
 
-class Lectura(BaseModel):
-    estacion_id: int
-    valor: float
 
-db_lecturas = []
+@app.delete("/estaciones/{id}", tags=["Gestión de Infraestructura"])
+def eliminar_estacion(
+    id: int,
+    db: Session = Depends(get_db),
+    usuario: str = Depends(obtener_identidad_actual)
+):
+    """Elimina una estación y todas sus lecturas asociadas. Requiere autenticación."""
+    estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
+    if not estacion:
+        raise HTTPException(status_code=404, detail="Estación no encontrada")
+    
+    # Eliminar lecturas asociadas
+    db.query(models.LecturaDB).filter(models.LecturaDB.estacion_id == id).delete()
+    db.delete(estacion)
+    db.commit()
+    return {"message": "Estación eliminada correctamente"}
+
+
+@app.put("/estaciones/{id}", tags=["Gestión de Infraestructura"])
+def actualizar_estacion(
+    id: int,
+    estacion_data: schemas.EstacionCreate,
+    db: Session = Depends(get_db),
+    usuario: str = Depends(obtener_identidad_actual)
+):
+    """Actualiza los datos de una estación existente. Requiere autenticación."""
+    estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
+    if not estacion:
+        raise HTTPException(status_code=404, detail="Estación no encontrada")
+    
+    estacion.nombre = estacion_data.nombre
+    estacion.ubicacion = estacion_data.ubicacion
+    db.commit()
+    db.refresh(estacion)
+    return {"message": "Estación actualizada", "data": estacion}
+
+
+#ENDPOINTS DE LECTURAS
 
 @app.post(
     "/lecturas/",
@@ -107,6 +166,7 @@ def registrar_lectura(
     db: Session = Depends(get_db),
     usuario: str = Depends(obtener_identidad_actual)  
 ):
+    # Verificar que la estación existe
     estacion_db = db.query(models.EstacionDB).filter(
         models.EstacionDB.id == lectura.estacion_id
     ).first()
@@ -117,7 +177,7 @@ def registrar_lectura(
             detail="Error de Integridad: La estación no existe en la base de datos."
         )
     
-    # Si la estación existe, guardar la lectura
+    # Guardar la lectura
     nueva_lectura = models.LecturaDB(
         valor=lectura.valor,
         estacion_id=lectura.estacion_id
@@ -125,7 +185,51 @@ def registrar_lectura(
     db.add(nueva_lectura)
     db.commit()
     
-    return {"status": "Lectura guardada en DB"}
+    return {"status": "Lectura guardada en DB", "lectura_id": nueva_lectura.id}
+
+
+@app.get("/estaciones/{id}/lecturas", tags=["Telemetría de Sensores"])
+def obtener_lecturas_estacion(
+    id: int,
+    limit: int = 100,
+    skip: int = 0,
+    db: Session = Depends(get_db),
+    usuario: str = Depends(obtener_identidad_actual)
+):
+    """Obtiene el historial de lecturas de una estación específica."""
+    estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
+    if not estacion:
+        raise HTTPException(status_code=404, detail="Estación no encontrada")
+    
+    lecturas = db.query(models.LecturaDB)\
+        .filter(models.LecturaDB.estacion_id == id)\
+        .order_by(models.LecturaDB.id.desc())\
+        .offset(skip)\
+        .limit(limit)\
+        .all()
+    
+    return [{"id": l.id, "valor": l.valor, "fecha": l.fecha} for l in lecturas]
+
+
+@app.get("/lecturas/", tags=["Telemetría de Sensores"])
+def listar_todas_lecturas(
+    estacion_id: int = None,
+    limit: int = 100,
+    skip: int = 0,
+    db: Session = Depends(get_db)
+):
+    """Lista todas las lecturas. Opcionalmente filtrar por estación."""
+    query = db.query(models.LecturaDB)
+    
+    if estacion_id:
+        query = query.filter(models.LecturaDB.estacion_id == estacion_id)
+    
+    lecturas = query.order_by(models.LecturaDB.id.desc()).offset(skip).limit(limit).all()
+    
+    return [{"id": l.id, "valor": l.valor, "estacion_id": l.estacion_id, "fecha": l.fecha} for l in lecturas]
+
+
+#ENDPOINTS DE RIESGO 
 
 @app.get(
     "/estaciones/{id}/riesgo",
@@ -139,46 +243,52 @@ async def obtener_riesgo(id: int, db: Session = Depends(get_db)):
     if not estacion:
         raise HTTPException(status_code=404, detail="Estación no encontrada")
     
-    # 2. Filtrar lecturas de la estación
-    lecturas = db.query(models.LecturaDB).filter(models.LecturaDB.estacion_id == id).all()
-    if not lecturas:
-        return {"id": id, "nivel": "SIN DATOS", "valor": 0}
+    # 2. Obtener última lectura
+    ultima_lectura = db.query(models.LecturaDB)\
+        .filter(models.LecturaDB.estacion_id == id)\
+        .order_by(models.LecturaDB.id.desc())\
+        .first()
     
-    # 3. Evaluar última lectura
-    ultima_lectura = lecturas[-1].valor
-    if ultima_lectura > 20.0:
+    if not ultima_lectura:
+        return {"id": id, "nombre": estacion.nombre, "nivel": "SIN DATOS", "valor": 0}
+    
+    # 3. Evaluar riesgo
+    if ultima_lectura.valor > 20.0:
         nivel = "PELIGRO"
-    elif ultima_lectura > 10.0:
+    elif ultima_lectura.valor > 10.0:
         nivel = "ALERTA"
     else:
         nivel = "NORMAL"
-    return {"id": id, "valor": ultima_lectura, "nivel": nivel}
+    
+    return {"id": id, "nombre": estacion.nombre, "valor": ultima_lectura.valor, "nivel": nivel}
 
 
-@app.get("/estaciones/{id}/historial")
+@app.get("/estaciones/{id}/historial", tags=["Análisis de Riesgo"])
 async def obtener_historial(id: int, db: Session = Depends(get_db)):
-    # PASO 1: Verificar si la estación existe
+    """Obtiene el historial completo de lecturas de una estación con estadísticas."""
+    # Verificar si la estación existe
     estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
     if not estacion:
         raise HTTPException(status_code=404, detail="Estación no encontrada")
 
-    # PASO 2: Filtrar las lecturas
+    # Obtener todas las lecturas
     lecturas = db.query(models.LecturaDB).filter(models.LecturaDB.estacion_id == id).all()
     valores_lecturas = [lectura.valor for lectura in lecturas]
 
-    # PASO 3: Calcular el promedio
+    # Calcular promedio
     if len(valores_lecturas) > 0:
         promedio = sum(valores_lecturas) / len(valores_lecturas)
     else:
         promedio = 0.0
 
-    # PASO 4: Retornar el JSON
     return {
         "estacion_id": id,
+        "nombre": estacion.nombre,
         "lecturas": valores_lecturas,
         "conteo": len(valores_lecturas),
         "promedio": round(promedio, 2)
     }
+
 
 @app.get(
     "/estaciones/stats",
@@ -258,6 +368,7 @@ async def estadisticas_estaciones(db: Session = Depends(get_db)):
         "recomendaciones": _generar_recomendaciones(estaciones_peligro, estaciones_alerta)
     }
 
+
 def _generar_recomendaciones(peligro, alerta):
     recomendaciones = []
     if peligro > 0:
@@ -268,59 +379,10 @@ def _generar_recomendaciones(peligro, alerta):
         recomendaciones.append("✅ Todas las estaciones operan dentro de parámetros normales")
     return recomendaciones
 
-@app.post("/token", tags=["Seguridad"])
-async def login_para_obtener_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    # Por ahora, acepta cualquier credencial (para pruebas)
-    # O solo acepta admin/admin
-    if form_data.username == "admin" and form_data.password == "admin":
-        return {
-            "access_token": crear_token_acceso({"sub": form_data.username}),
-            "token_type": "bearer"
-        }
-    raise HTTPException(status_code=401, detail="Credenciales incorrectas")
 
+#ENDPOINT DE SALUD 
 
-@app.delete("/estaciones/{id}", tags=["Gestión de Infraestructura"])
-def eliminar_estacion(
-    id: int,
-    db: Session = Depends(get_db),
-    usuario: str = Depends(obtener_identidad_actual)
-):
-    estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
-    if not estacion:
-        raise HTTPException(status_code=404, detail="Estación no encontrada")
-    
-    db.query(models.LecturaDB).filter(models.LecturaDB.estacion_id == id).delete()
-    db.delete(estacion)
-    db.commit()
-    return {"message": "Estación eliminada"}
-
-@app.put("/estaciones/{id}", tags=["Gestión de Infraestructura"])
-def actualizar_estacion(
-    id: int,
-    estacion_data: schemas.EstacionCreate,
-    db: Session = Depends(get_db),
-    usuario: str = Depends(obtener_identidad_actual)
-):
-    estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
-    if not estacion:
-        raise HTTPException(status_code=404, detail="Estación no encontrada")
-    
-    estacion.nombre = estacion_data.nombre
-    estacion.ubicacion = estacion_data.ubicacion
-    db.commit()
-    db.refresh(estacion)
-    return {"message": "Estación actualizada", "data": estacion}
-
-@app.get("/estaciones/{id}/lecturas", tags=["Telemetría de Sensores"])
-def obtener_lecturas_estacion(
-    id: int,
-    db: Session = Depends(get_db),
-    usuario: str = Depends(obtener_identidad_actual)
-):
-    estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
-    if not estacion:
-        raise HTTPException(status_code=404, detail="Estación no encontrada")
-    
-    lecturas = db.query(models.LecturaDB).filter(models.LecturaDB.estacion_id == id).all()
-    return [{"id": l.id, "valor": l.valor} for l in lecturas]
+@app.get("/health", tags=["Sistema"])
+async def health_check():
+    """Verifica que la API esté funcionando correctamente."""
+    return {"status": "ok", "message": "SMAT API funcionando correctamente"}

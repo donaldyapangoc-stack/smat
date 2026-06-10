@@ -2,15 +2,16 @@ import requests
 import time
 import random
 
-
+# ===========================================================
 # CONFIGURACIÓN DEL DISPOSITIVO IoT EMULADO
 # Simula un microcontrolador ESP32 / Raspberry Pi
+# ===========================================================
 API_URL    = "http://localhost:8000/lecturas/"
 ESTACION_ID = 1        # ID de la estación registrada en la DB
-TOKEN      = "TU_TOKEN_JWT_AQUI"  # Del /token
+TOKEN      = "TU_TOKEN_JWT_AQUI"  # Obtenido del endpoint POST /token
 
-#Umbrales
-UMBRAL_ALERTA  = 70.0   # Nivel de inundación, en cm
+# Umbrales (cm)
+UMBRAL_ALERTA  = 70.0   # Nivel de inundación
 INTERVALO_NORMAL     = 10   # segundos en modo normal
 INTERVALO_EMERGENCIA =  2   # segundos en modo emergencia
 
@@ -18,6 +19,8 @@ INTERVALO_EMERGENCIA =  2   # segundos en modo emergencia
 def leer_sensor_emulado() -> float:
     """
     Simula la lectura de un sensor de nivel de río (0 – 100 cm).
+    En hardware real este valor vendría del ADC del ESP32 o del
+    sensor ultrasónico conectado al GPIO de la Raspberry Pi.
     """
     return round(random.uniform(10.5, 85.0), 2)
 
@@ -28,18 +31,18 @@ def enviar_telemetria():
     while True:
         valor = leer_sensor_emulado()
 
-        
-        # PARTE DEL RETO
-        
+        # -------------------------------------------------------
+        # RETO SEMANA 9 – Lógica de Alarma
+        # -------------------------------------------------------
         if valor > UMBRAL_ALERTA:
             print(f"[ALERTA] Umbral de inundación superado → {valor} cm")
             intervalo = INTERVALO_EMERGENCIA     # Modo Emergencia: cada 2 s
         else:
             intervalo = INTERVALO_NORMAL         # Modo Normal: cada 10 s
 
-        
+        # -------------------------------------------------------
         # Construcción del payload y cabeceras JWT
-        
+        # -------------------------------------------------------
         payload = {
             "valor":       valor,
             "estacion_id": ESTACION_ID
@@ -48,9 +51,9 @@ def enviar_telemetria():
             "Authorization": f"Bearer {TOKEN}"
         }
 
-       
+        # -------------------------------------------------------
         # Envío HTTP a la API SMAT
-        
+        # -------------------------------------------------------
         try:
             response = requests.post(API_URL, json=payload, headers=headers,
                                      timeout=5)
