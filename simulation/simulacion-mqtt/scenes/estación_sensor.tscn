@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3 uid="uid://wnnjn52883sw"]
+
+[ext_resource type="Script" uid="uid://co3jma1issodi" path="res://estación_sensor.gd" id="1_iv0b3"]
+[ext_resource type="Texture2D" uid="uid://vvd1r8yv0xwa" path="res://Antenita.png" id="2_uqxbs"]
+
+[node name="EstaciónSensor" type="Node2D"]
+script = ExtResource("1_iv0b3")
+
+[node name="Label" type="Label" parent="."]
+offset_left = -472.0
+offset_top = 566.0
+offset_right = -2.0
+offset_bottom = 701.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 80
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+position = Vector2(-56, -121)
+texture = ExtResource("2_uqxbs")

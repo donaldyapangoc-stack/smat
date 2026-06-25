@@ -1,0 +1,20 @@
+[gd_scene load_steps=5 format=3 uid="uid://cu0ya8si1m3dt"]
+
+[ext_resource type="PackedScene" uid="uid://ktm7k0co2o7l" path="res://addons/mqtt/mqtt.tscn" id="1_4r3hn"]
+[ext_resource type="Script" uid="uid://d1opwus4ee1wp" path="res://scenes/dashboard.gd" id="1_vjk6i"]
+[ext_resource type="Texture2D" uid="uid://w0ik3q0sixj8" path="res://c8c6ca95c0dafa106ae03fce4c72704d.jpg" id="2_vjk6i"]
+[ext_resource type="PackedScene" uid="uid://wnnjn52883sw" path="res://scenes/estación_sensor.tscn" id="4_cp5r7"]
+
+[node name="Dashboard" type="Node2D"]
+script = ExtResource("1_vjk6i")
+
+[node name="MQTTClient" parent="." instance=ExtResource("1_4r3hn")]
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+position = Vector2(592, 314)
+scale = Vector2(1.7219797, 1.0938053)
+texture = ExtResource("2_vjk6i")
+
+[node name="Estacion_1" parent="." instance=ExtResource("4_cp5r7")]
+position = Vector2(616, 313)
+scale = Vector2(0.195, 0.195)
