@@ -1,3 +1,7 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# Permitir la carpeta de distribución del ejecutable
+!simulation/dist/
+!simulation/dist/**

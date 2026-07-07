@@ -1,3 +1,4 @@
+import os
 import paho.mqtt.client as mqtt
 import requests
 import json
@@ -7,13 +8,13 @@ import sys
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_TOPIC = "fisi/smat/estaciones/#"
-API_URL = "http://localhost:8000/lecturas/"
-JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbl9zbWF0Iiwicm9sIjoiYWRtaW5pc3RyYWRvciIsImV4cCI6MTc4MTExMTY0M30.MPSL79CHhRDRAkiEoq38G8Y94Ct1_EBDEJUXgO66p20"
+API_URL = os.environ.get("API_URL", "http://localhost:8000/lecturas/")
+JWT_TOKEN = os.environ.get("JWT_TOKEN", "tu_token_jwt_aqui")
 
 DEADBAND_PORCENTAJE = 5.0
 INTERVALO_MINIMO = 60
 
-cache = {}  # { estacion_id: { "valor": float, "timestamp": float } }
+cache = {}
 
 
 def debe_enviar(estacion_id, nuevo_valor):
